@@ -9,9 +9,7 @@
     WAIT_TIME: 100,
   };
 
-  // Extension version from manifest.json
   const extensionVersion = "2.8";
-  console.log(`Extension API Naturalisation - Version: ${extensionVersion}`);
 
   if (!window.location.href.includes(CONFIG.URL_PATTERN)) return;
 
@@ -105,17 +103,10 @@
         }
       }
     } catch (e) {
-      console.log(
-        "Erreur lors de la récupération de l'entretien d'assimilation:",
-        e
-      );
+      // Silently fail to avoid console exposure
     }
 
-    if (!decretId) {
-      console.log(
-        "Extension API Naturalisation  : Aucun numéro de décret trouvé pour ce dossier"
-      );
-    }
+    // Fin récupération dossier
 
     // Fin récupération dossier (une seule requête)
 
@@ -142,10 +133,7 @@
         }
       }
     } catch (e) {
-      console.log(
-        "Extension API Naturalisation  : Erreur lors de la récupération des notifications:",
-        e
-      );
+      // Silently fail
     }
 
     // Fonction pour obtenir la description du statut
@@ -262,14 +250,6 @@
 
     const dossierStatus = await getStatusDescription(
       dossierStatusCode.toLowerCase()
-    );
-
-    console.log(
-      "Extension API Naturalisation  : Statut code = " + dossierStatusCode
-    );
-
-    console.log(
-      "Extension API Naturalisation  : Statut description = " + dossierStatus
     );
 
     // Fonction pour calculer le nombre de jours écoulés
@@ -488,14 +468,6 @@
     // Création du nouvel élément avec le style et le format spécifiés
     const newElement = document.createElement("li");
     newElement.setAttribute(dynamicClass, "");
-    newElement.className = "itemFrise active ng-star-inserted";
-    newElement.style.background = "linear-gradient(165deg, #dbe2e9, #ffffff)";
-    newElement.style.border = "2px solid #255a99";
-    newElement.style.borderRadius = "8px";
-    newElement.style.boxShadow = "inset 2px 2px 5px rgba(0, 0, 0, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
-    // Get version for display
-    const versionText = `v${extensionVersion}`;
-
     // Inject or update CSS to handle hover display for long statut code
     const styleId = "anf-status-style";
     let styleEl = document.getElementById(styleId);
@@ -541,32 +513,52 @@
         margin-left: 2px;
       }
     `;
+    newElement.style.background = "linear-gradient(165deg, #dbe2e9, #ffffff)";
+    newElement.style.border = "2px solid #255a99";
+    newElement.style.borderRadius = "8px";
+    newElement.style.boxShadow = "inset 2px 2px 5px rgba(0, 0, 0, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
+    
+    // Create inner structure safely
+    const contentDiv = document.createElement("div");
+    contentDiv.setAttribute(dynamicClass, "");
+    contentDiv.className = "itemFriseContent";
+    contentDiv.style.position = "relative";
 
-    newElement.innerHTML = `
-      <div ${dynamicClass} class="itemFriseContent" style="position: relative;">
-        <span ${dynamicClass} style="position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;">${versionText}</span>
-        <span ${dynamicClass} class="itemFriseIcon">
-          <span ${dynamicClass} aria-hidden="true" class="fa fa-hourglass-start" style="color:  #bf2626!important;"></span>
-        </span>
-        <div ${dynamicClass} class="anf-code-popup"></div>
-        <p ${dynamicClass}></p>
-      </div>
-    `;
+    const vSpan = document.createElement("span");
+    vSpan.setAttribute(dynamicClass, "");
+    vSpan.style.cssText = "position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;";
+    vSpan.textContent = `v${extensionVersion}`;
+    contentDiv.appendChild(vSpan);
 
-    const popup = newElement.querySelector(".anf-code-popup");
+    const iconSpanWrap = document.createElement("span");
+    iconSpanWrap.setAttribute(dynamicClass, "");
+    iconSpanWrap.className = "itemFriseIcon";
+    const iconSpan = document.createElement("span");
+    iconSpan.setAttribute(dynamicClass, "");
+    iconSpan.setAttribute("aria-hidden", "true");
+    iconSpan.className = "fa fa-hourglass-start";
+    iconSpan.style.color = "#bf2626";
+    iconSpanWrap.appendChild(iconSpan);
+    contentDiv.appendChild(iconSpanWrap);
+
+    const popup = document.createElement("div");
+    popup.setAttribute(dynamicClass, "");
+    popup.className = "anf-code-popup";
     popup.textContent = `${dossierStatusCode} depuis le ${formatDate(data?.dossier?.date_statut)}`;
+    contentDiv.appendChild(popup);
 
-    const p = newElement.querySelector("p");
+    const p = document.createElement("p");
+    p.setAttribute(dynamicClass, "");
     p.textContent = `${dossierStatus} `;
     const statusSpan = document.createElement("span");
     statusSpan.style.color = "#bf2626";
     statusSpan.textContent = `(${daysAgo(data?.dossier?.date_statut)})`;
     p.appendChild(statusSpan);
+    contentDiv.appendChild(p);
+
+    newElement.appendChild(contentDiv);
 
     activeStep.parentNode.insertBefore(newElement, activeStep.nextSibling);
-    console.log(
-      "Extension API Naturalisation  : Nouvel élément inséré avec le statut du dossier"
-    );
 
     // Ajouter une étape pour le décret si disponible
     if (decretId) {
@@ -579,27 +571,54 @@
       decretElement.style.boxShadow = "inset 2px 2px 5px rgba(16, 185, 129, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
       decretElement.style.marginLeft = "20px";
 
-      decretElement.innerHTML = `
-        <div ${dynamicClass} class="itemFriseContent" style="position: relative;">
-          <span ${dynamicClass} style="position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;">${versionText}</span>
-          <span ${dynamicClass} class="itemFriseIcon">
-            <span ${dynamicClass} aria-hidden="true" class="fa fa-thumbs-up" style="color: #19a53cff!important;"></span>
-          </span>
-          <p ${dynamicClass}>
-            Décret de Naturalisation <span class="decret-id" style="color: #bf2626;"></span>
-            <br/>
-            <a href="https://www.legifrance.gouv.fr/search/all?tab_selection=all&searchField=ALL&query=nationalit%C3%A9+fran%C3%A7aise&page=1&init=true" target="_blank" style="color: #255a99; text-decoration: none; font-size: 11px;">
-              <i class="fa fa-search" aria-hidden="true"></i> LégiFrance
-            </a>
-          </p>
-        </div>
-      `;
-      decretElement.querySelector(".decret-id").textContent = `N° ${decretId}`;
+      const dContent = document.createElement("div");
+      dContent.setAttribute(dynamicClass, "");
+      dContent.className = "itemFriseContent";
+      dContent.style.position = "relative";
+
+      const dvSpan = document.createElement("span");
+      dvSpan.setAttribute(dynamicClass, "");
+      dvSpan.style.cssText = "position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;";
+      dvSpan.textContent = `v${extensionVersion}`;
+      dContent.appendChild(dvSpan);
+
+      const dIconSpanWrap = document.createElement("span");
+      dIconSpanWrap.setAttribute(dynamicClass, "");
+      dIconSpanWrap.className = "itemFriseIcon";
+      const dIconSpan = document.createElement("span");
+      dIconSpan.setAttribute(dynamicClass, "");
+      dIconSpan.setAttribute("aria-hidden", "true");
+      dIconSpan.className = "fa fa-thumbs-up";
+      dIconSpan.style.color = "#19a53c";
+      dIconSpanWrap.appendChild(dIconSpan);
+      dContent.appendChild(dIconSpanWrap);
+
+      const dP = document.createElement("p");
+      dP.setAttribute(dynamicClass, "");
+      dP.textContent = "Décret de Naturalisation ";
+      const dNoSpan = document.createElement("span");
+      dNoSpan.className = "decret-id";
+      dNoSpan.style.color = "#bf2626";
+      dNoSpan.textContent = `N° ${decretId}`;
+      dP.appendChild(dNoSpan);
+      
+      dP.appendChild(document.createElement("br"));
+      const dLink = document.createElement("a");
+      dLink.href = "https://www.legifrance.gouv.fr/search/all?tab_selection=all&searchField=ALL&query=nationalit%C3%A9+fran%C3%A7aise&page=1&init=true";
+      dLink.target = "_blank";
+      dLink.style.cssText = "color: #255a99; text-decoration: none; font-size: 11px;";
+      
+      const lIcon = document.createElement("i");
+      lIcon.className = "fa fa-search";
+      lIcon.setAttribute("aria-hidden", "true");
+      dLink.appendChild(lIcon);
+      dLink.appendChild(document.createTextNode(" LégiFrance"));
+      dP.appendChild(dLink);
+      
+      dContent.appendChild(dP);
+      decretElement.appendChild(dContent);
       
       newElement.parentNode.insertBefore(decretElement, newElement.nextSibling);
-      console.log(
-        "Extension API Naturalisation  : Élément décret inséré avec l'ID: " + decretId
-      );
     }
 
     // Fonction pour masquer/afficher le numéro de série
