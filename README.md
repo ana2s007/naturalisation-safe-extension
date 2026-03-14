@@ -4,14 +4,6 @@ Contenu:
 - manifest.json
 - inject.js
 
-Ce qui a été retiré:
-- clé privée RSA embarquée
-- passphrase embarquée
-- fonction de déchiffrement locale
-- ressources manifest inutiles
-- dépendances implicites à forge
-- injections innerHTML pour les cartes principales
-
 Ce qui reste:
 - lecture des APIs déjà accessibles dans la session connectée
 - affichage des dates utiles
