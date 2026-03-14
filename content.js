@@ -110,147 +110,145 @@
 
     // Fin récupération dossier (une seule requête)
 
-    // Récupérer les notifications et extraire la date de réception du récépissé de complétude
-    try {
-      const notifRes = await fetch(
-        "https://administration-etrangers-en-france.interieur.gouv.fr/api/notifications"
-      );
-      if (notifRes.ok) {
-        const notifJson = await notifRes.json();
-        const items = Array.isArray(notifJson?._items) ? notifJson._items : [];
-        
-        // Récupérer RECEPISSE_COMPLETUDE_ENVOYE
-        const matches = items.filter(
-          (it) =>
-            String(it?.id_demande) === String(idDossier) &&
-            it?.type_notification === "NATIONALITE" &&
-            it?.motif_notification === "RECEPISSE_COMPLETUDE_ENVOYE"
-        );
-        if (matches.length) {
-          recepisseCreated = matches.sort(
-            (a, b) => new Date(b._created) - new Date(a._created)
-          )[0]?._created;
-        }
-      }
-    } catch (e) {
-      // Silently fail
+    // Fonction pour valider si le statut est en clair
+    function maybePlainStatus(statusValue) {
+      if (typeof statusValue !== "string") return null;
+      const trimmed = statusValue.trim();
+      if (!trimmed) return null;
+      return /^[a-z0-9_]+$/i.test(trimmed) ? trimmed.toLowerCase() : null;
     }
 
-    // Fonction pour obtenir la description du statut
-    async function getStatusDescription(status) {
-      const statusMap = {
-        // 0 Brouillon
+    function safeStatusDescription(status) {
+      if (!status) return null;
+
+      const map = {
         draft: "Dossier en brouillon",
-        // 1 Dépôt de la demande
         dossier_depose: "Dossier déposé",
-        // 2 Examen des pièces en cours
         verification_formelle_a_traiter: "Préfecture : Vérification à traiter",
-        verification_formelle_en_cours:
-          "Préfecture : Vérification formelle en cours",
-        verification_formelle_mise_en_demeure:
-          "Préfecture : Vérification formelle, mise en demeure",
-        instruction_a_affecter:
-          "Préfecture : En attente affectation à un agent",
-        // 3 Réception du récépissé de complétude
-        instruction_recepisse_completude_a_envoyer:
-          "Préfecture : récépissé de complétude à envoyer",
-        instruction_recepisse_completude_a_envoyer_retour_complement_a_traiter:
-          "Préfecture : Compléments à vérfier par l'agent",
-        // 4 Entretien
+        verification_formelle_en_cours: "Préfecture : Vérification formelle en cours",
+        verification_formelle_mise_en_demeure: "Préfecture : Vérification formelle, mise en demeure",
+        instruction_a_affecter: "Préfecture : En attente affectation à un agent",
+        instruction_recepisse_completude_a_envoyer: "Préfecture : récépissé de complétude à envoyer",
+        instruction_recepisse_completude_a_envoyer_retour_complement_a_traiter: "Préfecture : Compléments à vérifier par l'agent",
         instruction_date_ea_a_fixer: "Préfecture : Date entretien à fixer",
         ea_demande_report_ea: "Préfecture : Demande de report entretien",
         ea_en_attente_ea: "Préfecture : Attente convocation entretien",
-        ea_crea_a_valider:
-          "Préfecture : Entretien passé, compte-rendu à valider",
-        // 5 Decision prefecture
+        ea_crea_a_valider: "Préfecture : Entretien passé, compte-rendu à valider",
         prop_decision_pref_a_effectuer: "Préfecture : Décision à effectuer",
-        prop_decision_pref_en_attente_retour_hierarchique:
-          "Préfecture : En attente retour hiérarchique",
-        prop_decision_pref_en_attente_retour_hierarchiqu:
-          "Préfecture : En attente retour hiérarchique",
-        prop_decision_pref_prop_a_editer:
-          "Préfecture : Décision prise, rédaction en cours",
-        prop_decision_pref_en_attente_retour_signataire:
-          "Préfecture : En attente retour signataire",
-        // 6 Controle
+        prop_decision_pref_en_attente_retour_hierarchique: "Préfecture : En attente retour hiérarchique",
+        prop_decision_pref_prop_a_editer: "Préfecture : Décision prise, rédaction en cours",
+        prop_decision_pref_en_attente_retour_signataire: "Préfecture : En attente retour signataire",
         controle_a_affecter: "SDANF : Dossier transmis, attente d'affectation",
         controle_a_effectuer: "SDANF : Contrôle état civil à effectuer",
         controle_en_attente_pec: "SCEC : Attente validation pièce d'état civil",
         controle_pec_a_faire: "SCEC : Validation en cours pièce d'état civil",
-        controle_transmise_pour_decret:
-          "SDANF : Décret transmis pour approbation",
-        controle_en_attente_retour_hierarchique:
-          "SDANF : Attente retour hiérarchique pour décret",
-        controle_decision_a_editer:
-          "SDANF : Décision hiérarchique prise, édition prochaine",
-        controle_en_attente_signature:
-          "SDANF : Décision prise, attente signature",
-        controle_demande_notifiee: "Contrôle : demande notifiée",
-        // 7 Traitement en cours
+        controle_transmise_pour_decret: "SDANF : Décret transmis pour approbation",
+        controle_en_attente_retour_hierarchique: "SDANF : Attente retour hiérarchique pour décret",
+        controle_decision_a_editer: "SDANF : Décision hiérarchique prise, édition prochaine",
+        controle_en_attente_signature: "SDANF : Décision prise, attente signature",
         transmis_a_ac: "Décret : Dossier transmis au service décret",
-        a_verifier_avant_insertion_decret:
-          "Décret : Vérification avant insertion décret",
-        prete_pour_insertion_decret:
-          "Décret : Dossier prêt pour insertion décret",
+        a_verifier_avant_insertion_decret: "Décret : Vérification avant insertion décret",
+        prete_pour_insertion_decret: "Décret : Dossier prêt pour insertion décret",
         inseree_dans_decret: "Décret : Demande insérée dans décret",
         decret_envoye_prefecture: "Décret envoyé à préfecture",
         notification_envoyee: "Décret : Notification envoyée au demandeur",
         demande_traitee: "Décret : Demande finalisée",
-        // 8 Décision
-        decret_naturalisation_publie:
-          "Décision : Décret de naturalisation publié",
+        decret_naturalisation_publie: "Décision : Décret de naturalisation publié",
         decret_en_preparation: "Décision : Décret en préparation",
         decret_a_qualifier: "Décision : Décret à qualifier",
         decret_en_validation: "Décision : Décret en validation",
-        decision_negative_en_delais_recours:
-          "Décision négative en délais de recours",
+        decision_negative_en_delais_recours: "Décision négative en délais de recours",
         irrecevabilite_manifeste: "Décision : irrecevabilité manifeste",
-        irrecevabilite_manifeste_en_delais_recours:
-          "Décision : irrecevabilité en délais de recours",
+        irrecevabilite_manifeste_en_delais_recours: "Décision : irrecevabilité en délais de recours",
         decision_notifiee: "Décision notifiée",
         demande_en_cours_rapo: "Décision : Demande en cours RAPO",
-        controle_demande_notifiee: "Décision : Contrôle demande notifiée",
-        decret_publie: "Décret de naturalisation publié",
-        // 9 CSS
-        css_en_delais_recours: "Classement sans suite en délais de recours",
-        css_notifie: "Classement sans suite notifiée",
-        css_mise_en_demeure_a_affecter:
-          "Classement sans suite, Mise en demeure à affecter",
-        css_manuels_a_affecter:
-          "Proposition de Classement sans suite manuels à affecter",
-        css_manuels_a_rediger:
-          "Proposition de Classement sans suite manuels à rédiger",
-        css_mise_en_demeure_a_rediger:
-          "Classement sans suite, Mise en demeure à rédiger",
-        css_automatiques_a_affecter:
-          "Classement sans suite automatiques à affecter",
-        css_automatiques_a_rediger:
-          "Proposition de Classement sans suite automatiques à rédiger",
-        //
-        prenat_a_traiter: "Prenaturalisation : À traiter",
-        prenat_en_cours: "Prenaturalisation : En cours",
-        prenat_en_attente_complements:
-          "Prenaturalisation : En attente compléments",
-        prenat_cloture: "Prenaturalisation : Clôturée",
-        //
-        scec_a_faire: "SCEC à faire",
-        scec_en_cours: "SCEC en cours",
-        scec_en_attente: "SCEC en attente",
-        scec_bloque: "SCEC bloqué",
-        scec_termine: "SCEC terminé",
-        non_applicable: "SCEC non attribuable",
-        //
-        code_non_reconnu: "Code non reconnu",
+        decret_publie: "Décret de naturalisation publié"
       };
 
-      return statusMap[status] || status || statusMap["code_non_reconnu"];
+      return map[status] || null;
     }
 
-    let dossierStatusCode = data.dossier.statut || "Non disponible";
+    function createStatusCard(dynamicAttr, title, subtitle, note, isGreen = false, extraContent = null) {
+      const card = document.createElement("li");
+      card.setAttribute(dynamicAttr, "");
+      card.className = "itemFrise active ng-star-inserted " + (isGreen ? "anf-safe-card-green" : "anf-safe-card");
+      
+      if (isGreen) {
+        card.style.background = "linear-gradient(165deg, #d4f4dd, #f0fff4)";
+        card.style.border = "2px solid #10b981";
+      } else {
+        card.style.background = "linear-gradient(165deg, #dbe2e9, #ffffff)";
+        card.style.border = "2px solid #255a99";
+      }
+      card.style.borderRadius = "8px";
+      card.style.boxShadow = isGreen ? "inset 2px 2px 5px rgba(16, 185, 129, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)" : "inset 2px 2px 5px rgba(0, 0, 0, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
 
-    const dossierStatus = await getStatusDescription(
-      dossierStatusCode.toLowerCase()
-    );
+      const content = document.createElement("div");
+      content.setAttribute(dynamicAttr, "");
+      content.className = "itemFriseContent";
+      content.style.position = "relative";
+
+      const vSpan = document.createElement("span");
+      vSpan.setAttribute(dynamicAttr, "");
+      vSpan.style.cssText = "position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;";
+      vSpan.textContent = `v${extensionVersion}`;
+      content.appendChild(vSpan);
+
+      const iconWrap = document.createElement("span");
+      iconWrap.setAttribute(dynamicAttr, "");
+      iconWrap.className = "itemFriseIcon";
+      const icon = document.createElement("span");
+      icon.setAttribute(dynamicAttr, "");
+      icon.setAttribute("aria-hidden", "true");
+      icon.className = isGreen ? "fa fa-thumbs-up" : "fa fa-hourglass-start";
+      icon.style.color = isGreen ? "#19a53c" : "#bf2626";
+      iconWrap.appendChild(icon);
+      content.appendChild(iconWrap);
+
+      const p = document.createElement("p");
+      p.setAttribute(dynamicAttr, "");
+      p.textContent = title + " ";
+      
+      if (subtitle) {
+        const subSpan = document.createElement("span");
+        subSpan.style.color = "#bf2626";
+        subSpan.textContent = subtitle;
+        p.appendChild(subSpan);
+      }
+      content.appendChild(p);
+
+      if (note) {
+        const noteP = document.createElement("p");
+        noteP.setAttribute(dynamicAttr, "");
+        noteP.className = "anf-safe-note";
+        noteP.style.fontSize = "10px";
+        noteP.style.color = "#666";
+        noteP.style.textAlign = "center";
+        noteP.style.marginTop = "4px";
+        noteP.textContent = note;
+        content.appendChild(noteP);
+      }
+
+      if (extraContent) {
+        content.appendChild(extraContent);
+      }
+
+      card.appendChild(content);
+      return card;
+    }
+
+    const rawStatus = data.dossier.statut || null;
+    const plainStatus = maybePlainStatus(rawStatus);
+    const statusLabel = safeStatusDescription(plainStatus);
+    const dateStatut = data.dossier.date_statut;
+
+    const title = statusLabel || "Statut indisponible";
+    const note = statusLabel
+      ? (dateStatut ? `Depuis le ${formatDate(dateStatut)}` : null)
+      : "Le statut retourné par l'API n'est pas exploitable localement dans cette version.";
+
+    const dossierStatus = title;
+    const dossierStatusCode = rawStatus || "Non disponible";
 
     // Fonction pour calculer le nombre de jours écoulés
     function daysAgo(dateString) {
@@ -466,143 +464,24 @@
     }
 
     // Création du nouvel élément avec le style et le format spécifiés
-    const newElement = document.createElement("li");
-    newElement.setAttribute(dynamicClass, "");
-    // Inject or update CSS to handle hover display for long statut code
-    const styleId = "anf-status-style";
-    let styleEl = document.getElementById(styleId);
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = `
-      .itemFriseContent .anf-status-footer { position: absolute; bottom: 2px; left: 6px; right: 6px; font-size: 10px; color: #666; display: flex; justify-content: flex-end; }
-      .itemFriseContent .anf-status-date { white-space: nowrap; }
-      .itemFriseContent .anf-code-popup { position: absolute; top: calc(100% + 5px); left: 50%; background: #ffffff; color: #333; border: 1px solid #255a99; border-radius: 6px; padding: 6px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 11px; font-family: inherit; line-height: 1.3; font-weight: inherit; opacity: 0; visibility: hidden; transform: translate(-50%, 4px); transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s; z-index: 1000; display: inline-block; white-space: nowrap; width: max-content; }
-      .itemFriseContent:hover .anf-code-popup { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition: opacity .15s ease, transform .15s ease; }
-      
-      .anf-step-info {
-        display: inline-flex;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 5px;
-        background-color: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 12px;
-        padding: 2px 10px;
-        margin: 2px 0 2px 6px;
-        font-size: 11px;
-        color: #475569;
-        font-weight: 600;
-        vertical-align: middle;
-        white-space: normal;
-        line-height: 1.4;
-        max-width: 98%;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        transition: all 0.2s ease;
-      }
-      .anf-step-info:hover {
-        background-color: #f1f5f9;
-        border-color: #cbd5e1;
-      }
-      .anf-step-info .secondary-text {
-        color: #94a3b8;
-        font-size: 10px;
-        font-weight: 400;
-        margin-left: 2px;
-      }
-    `;
-    newElement.style.background = "linear-gradient(165deg, #dbe2e9, #ffffff)";
-    newElement.style.border = "2px solid #255a99";
-    newElement.style.borderRadius = "8px";
-    newElement.style.boxShadow = "inset 2px 2px 5px rgba(0, 0, 0, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
-    
-    // Create inner structure safely
-    const contentDiv = document.createElement("div");
-    contentDiv.setAttribute(dynamicClass, "");
-    contentDiv.className = "itemFriseContent";
-    contentDiv.style.position = "relative";
-
-    const vSpan = document.createElement("span");
-    vSpan.setAttribute(dynamicClass, "");
-    vSpan.style.cssText = "position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;";
-    vSpan.textContent = `v${extensionVersion}`;
-    contentDiv.appendChild(vSpan);
-
-    const iconSpanWrap = document.createElement("span");
-    iconSpanWrap.setAttribute(dynamicClass, "");
-    iconSpanWrap.className = "itemFriseIcon";
-    const iconSpan = document.createElement("span");
-    iconSpan.setAttribute(dynamicClass, "");
-    iconSpan.setAttribute("aria-hidden", "true");
-    iconSpan.className = "fa fa-hourglass-start";
-    iconSpan.style.color = "#bf2626";
-    iconSpanWrap.appendChild(iconSpan);
-    contentDiv.appendChild(iconSpanWrap);
-
     const popup = document.createElement("div");
     popup.setAttribute(dynamicClass, "");
     popup.className = "anf-code-popup";
     popup.textContent = `${dossierStatusCode} depuis le ${formatDate(data?.dossier?.date_statut)}`;
-    contentDiv.appendChild(popup);
 
-    const p = document.createElement("p");
-    p.setAttribute(dynamicClass, "");
-    p.textContent = `${dossierStatus} `;
-    const statusSpan = document.createElement("span");
-    statusSpan.style.color = "#bf2626";
-    statusSpan.textContent = `(${daysAgo(data?.dossier?.date_statut)})`;
-    p.appendChild(statusSpan);
-    contentDiv.appendChild(p);
-
-    newElement.appendChild(contentDiv);
+    const subtitle = `(${daysAgo(data?.dossier?.date_statut)})`;
+    const newElement = createStatusCard(dynamicClass, title, subtitle, note, false, popup);
 
     activeStep.parentNode.insertBefore(newElement, activeStep.nextSibling);
 
     // Ajouter une étape pour le décret si disponible
     if (decretId) {
-      const decretElement = document.createElement("li");
-      decretElement.setAttribute(dynamicClass, "");
-      decretElement.className = "itemFrise active ng-star-inserted";
-      decretElement.style.background = "linear-gradient(165deg, #d4f4dd, #f0fff4)";
-      decretElement.style.border = "2px solid #10b981";
-      decretElement.style.borderRadius = "8px";
-      decretElement.style.boxShadow = "inset 2px 2px 5px rgba(16, 185, 129, 0.2), 5px 5px 15px rgba(0, 0, 0, 0.3)";
-      decretElement.style.marginLeft = "20px";
-
-      const dContent = document.createElement("div");
-      dContent.setAttribute(dynamicClass, "");
-      dContent.className = "itemFriseContent";
-      dContent.style.position = "relative";
-
-      const dvSpan = document.createElement("span");
-      dvSpan.setAttribute(dynamicClass, "");
-      dvSpan.style.cssText = "position: absolute; top: 1px; right: 3px; font-size: 8px; color: #aaa; opacity: 0.85;";
-      dvSpan.textContent = `v${extensionVersion}`;
-      dContent.appendChild(dvSpan);
-
-      const dIconSpanWrap = document.createElement("span");
-      dIconSpanWrap.setAttribute(dynamicClass, "");
-      dIconSpanWrap.className = "itemFriseIcon";
-      const dIconSpan = document.createElement("span");
-      dIconSpan.setAttribute(dynamicClass, "");
-      dIconSpan.setAttribute("aria-hidden", "true");
-      dIconSpan.className = "fa fa-thumbs-up";
-      dIconSpan.style.color = "#19a53c";
-      dIconSpanWrap.appendChild(dIconSpan);
-      dContent.appendChild(dIconSpanWrap);
-
-      const dP = document.createElement("p");
-      dP.setAttribute(dynamicClass, "");
-      dP.textContent = "Décret de Naturalisation ";
-      const dNoSpan = document.createElement("span");
-      dNoSpan.className = "decret-id";
-      dNoSpan.style.color = "#bf2626";
-      dNoSpan.textContent = `N° ${decretId}`;
-      dP.appendChild(dNoSpan);
+      const dTitle = "Décret de Naturalisation ";
+      const dSubtitle = `N° ${decretId}`;
       
-      dP.appendChild(document.createElement("br"));
+      const linkWrap = document.createElement("div");
+      linkWrap.setAttribute(dynamicClass, "");
+
       const dLink = document.createElement("a");
       dLink.href = "https://www.legifrance.gouv.fr/search/all?tab_selection=all&searchField=ALL&query=nationalit%C3%A9+fran%C3%A7aise&page=1&init=true";
       dLink.target = "_blank";
@@ -613,12 +492,12 @@
       lIcon.setAttribute("aria-hidden", "true");
       dLink.appendChild(lIcon);
       dLink.appendChild(document.createTextNode(" LégiFrance"));
-      dP.appendChild(dLink);
+      linkWrap.appendChild(dLink);
+
+      const dElement = createStatusCard(dynamicClass, dTitle, dSubtitle, null, true, linkWrap);
+      dElement.style.marginLeft = "20px";
       
-      dContent.appendChild(dP);
-      decretElement.appendChild(dContent);
-      
-      newElement.parentNode.insertBefore(decretElement, newElement.nextSibling);
+      newElement.parentNode.insertBefore(dElement, newElement.nextSibling);
     }
 
     // Fonction pour masquer/afficher le numéro de série
